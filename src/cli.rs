@@ -25,5 +25,25 @@ pub enum Command {
     Add {
         list_name: String,
         item: String,
-    }
+    },
+
+    Complete {
+        list_name: String,
+        item: String,
+    },
+
+    Incomplete {
+        list_name: String,
+        item: String,
+    },
+    
+    Remove {
+        list_name: String,
+        item: String,
+    },
+
+    Login,
+    Logout,
+    Push,
+    Pull,
 }
