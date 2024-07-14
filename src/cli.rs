@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 
 pub struct Cli {
     #[command(subcommand)] 
-    pub command: Commands,
+    pub command: Command,
 }
 
 #[derive(Parser, Subcommand)]
@@ -29,17 +29,17 @@ pub enum Command {
 
     Complete {
         list_name: String,
-        item: String,
+        item_number: usize,
     },
 
     Incomplete {
         list_name: String,
-        item: String,
+        item_number: usize,
     },
     
     Remove {
-        list_name: String,
-        item: String,
+        list_name: Option<String>,
+        item_number: Option<usize>,
     },
 
     Login,
