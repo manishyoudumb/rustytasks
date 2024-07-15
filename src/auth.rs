@@ -62,3 +62,10 @@ pub async fn login() -> Result<(), Box<dyn Error>> {
     ok(())
 
 }
+
+pub async fn logout() -> Result<(), Box<dyn Error>> {
+    println!("You've been logged out successfully. \n Have a nice day ahead \n");
+    Ok(())
+}
+
+
