@@ -39,9 +39,26 @@ pub async fn login() -> Result<(), Box<dyn Error>> {
                 code = value.into_owned();
             }
 
-            
+            let message = "You can now close this window and return to the terminal.";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{}",
+                message.len(),
+                message
+            );
+            stream.write_all(response.as_bytes())?;
+
+            let token = client
+                .exchange_code(oauth2::AuthorizationCode::new(code))
+                .request_async(async_http_client)
+                .await?;
+
+            println!("Access token: {}", token.access_token().secret());
+            println!("Refresh token: {:?}", token.refresh_token());
+
+            break;
         }
     }
     
+    ok(())
 
 }
