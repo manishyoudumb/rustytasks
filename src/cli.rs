@@ -9,10 +9,10 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Parser, Subcommand)]
+#[derive(Subcommand)]
 
 pub enum Command {
-    show {
+    Show {
         #[arg(short, long)]
         all: bool,
         #[arg(short, long)]

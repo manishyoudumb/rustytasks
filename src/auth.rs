@@ -9,13 +9,13 @@ pub async fn login() -> Result<(), Box<dyn Error>> {
     let client = create_oauth_client()?;
 
     let (auth_url, _) = client 
-        .authorize_url(oauth2::CsrffToken::new_random)
+        .authorize_url(oauth2::CsrfToken::new_random)
         .add_scope(Scope::new("https://www.googleapis.com/auth/tasks".to_string()))
         .url();
 
     println!("Please Open this URL in your browser to login:\n\n{}\n\n",auth_url);
 
-    let Listener = TcpListener::bind("127.0.0.1:8080")?;
+    let listener = TcpListener::bind("127.0.0.1:8080")?;
     for stream in listener.incoming() {
         if let Ok(mut stream) = stream {
             let code; 
@@ -59,7 +59,7 @@ pub async fn login() -> Result<(), Box<dyn Error>> {
         }
     }
     
-    ok(())
+    Ok(())
 
 }
 
@@ -69,3 +69,25 @@ pub async fn logout() -> Result<(), Box<dyn Error>> {
 }
 
 
+fn create_oauth_client() -> Result<BasicClient, Box<dyn Error>> {
+    let google_client_id = ClientId::new(
+        std::env::var("GOOGLE_CLIENT_ID").expect("Missing the GOOGLE_CLIENT_ID environment variable."),
+    );
+
+    let google_client_secret = ClientSecret::new(
+        std::env::var("GOOGLE_CLIENT_SECRET").expect("Missing the GOOGLE_CLIENT_SECRET environment variable."),
+    );
+
+    let auth_url = AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())?;
+    let token_url = TokenUrl::new("https://www.googleapis.com/oauth2/v3/token".to_string())?;
+
+    let client = BasicClient::new(
+        google_client_id,
+        Some(google_client_secret),
+        auth_url,
+        Some(token_url),
+    )
+    .set_redirect_uri(RedirectUrl::new("http://localhost:8080".to_string())?);
+
+    Ok(client)
+}
