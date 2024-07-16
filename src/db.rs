@@ -170,3 +170,65 @@ impl Database {
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio;
+    use dotenv::from_filename;
+
+    #[tokio::test]
+async fn test_push_and_pull_changes() -> TodoResult<()> {
+    from_filename(".env").ok();
+    let db1 = Database::new().await?;
+    let db2 = Database::new().await?;
+
+    // Clear any existing data
+    db1.remove_all_lists().await?;
+
+    // Create unique test data
+    db1.add_item("Keir", Item { description: "Finish quantum algorithm".to_string(), completed: false }).await?;
+    db1.add_item("Maverick", Item { description: "Test hypersonic jet".to_string(), completed: true }).await?;
+    db1.add_item("Cyborg", Item { description: "Upgrade neural interface".to_string(), completed: false }).await?;
+
+    db1.push_changes().await?;
+    db2.pull_changes().await?;
+
+    // Verify pulled changes
+    let lists = db2.get_lists().await?;
+    assert_eq!(lists.len(), 3, "Should have 3 lists after pull");
+
+    let keir_list = db2.get_list("Keir").await?;
+    assert_eq!(keir_list.items.len(), 1, "Keir's list should have 1 item");
+    assert_eq!(keir_list.items[0].description, "Finish quantum algorithm");
+    assert_eq!(keir_list.items[0].completed, false);
+
+    // Modify data in db2
+    db2.update_item_status("Keir", 1, true).await?;
+    db2.remove_item("Cyborg", 1).await?;
+    db2.add_item("AI", Item { description: "Develop sentient AI".to_string(), completed: false }).await?;
+
+    db2.push_changes().await?;
+    db1.pull_changes().await?;
+
+    // Verify updated data in db1
+    let updated_lists = db1.get_lists().await?;
+    assert_eq!(updated_lists.len(), 4, "Should have 4 lists after updates");
+
+    let updated_keir_list = db1.get_list("Keir").await?;
+    assert_eq!(updated_keir_list.items.len(), 1, "Updated Keir's list should have 1 item");
+    assert_eq!(updated_keir_list.items[0].completed, true);
+
+    let cyborg_list = db1.get_list("Cyborg").await?;
+    assert_eq!(cyborg_list.items.len(), 0, "Cyborg's list should be empty");
+
+    let ai_list = db1.get_list("AI").await?;
+    assert_eq!(ai_list.items.len(), 1, "AI list should have 1 item");
+    assert_eq!(ai_list.items[0].description, "Develop sentient AI");
+
+    // Clean up
+    db1.remove_all_lists().await?;
+
+    Ok(())
+}
+
+}    
