@@ -91,3 +91,27 @@ fn create_oauth_client() -> Result<BasicClient, Box<dyn Error>> {
 
     Ok(client)
 }
+
+
+//////////////// TEST CASE //////////////// 
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+        fn test_create_oauth_client() {
+            std::env::set_var("GOOGLE_CLIENT_ID", "test_client_id");
+            std::env::set_var("GOOGLE_CLIENT_SECRET", "test_client_secret");
+
+            let client = create_oauth_client().unwrap();
+
+            assert_eq!(client.client_id().as_str(), "test_client_id");
+            assert_eq!(client.auth_url().as_str(), "https://accounts.google.com/o/oauth2/v2/auth");
+            assert_eq!(client.token_url().unwrap().as_str(), "https://www.googleapis.com/oauth2/v3/token");
+            assert_eq!(client.redirect_url().unwrap().as_str(), "http://localhost:8080");
+        }
+
+
+    }
