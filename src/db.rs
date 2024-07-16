@@ -88,7 +88,84 @@ impl Database {
         Ok(lists)
     }
 
+    pub async fn get_list(&self, name: &str) -> TodoResult<List> {
+        let collection = self.db.collection::<List>("lists");
+        collection.find_one(doc! { "name": name }, None).await?
+            .ok_or_else(|| TodoError::ListNotFound(name.to_string()))
+    }
 
+    pub async fn add_item(&self, list_name: &str, item: Item) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        let result = collection.update_one(
+            doc! { "name": list_name },
+            doc! {
+                "$setOnInsert": { "name": list_name },
+                "$push": { "items": bson::to_document(&item).map_err(|err| TodoError::DatabaseError(err.into()))? }
+            },
+            mongodb::options::UpdateOptions::builder().upsert(true).build(),
+        ).await?;
     
+        if result.matched_count == 0 && result.upserted_id.is_none() {
+            return Err(TodoError::ListNotFound(list_name.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn update_item_status(&self, list_name: &str, item_number: usize, completed: bool) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        let result = collection.update_one(
+            doc! { "name": list_name },
+            doc! { "$set": { format!("items.{}.completed", item_number - 1): completed } },
+            None,
+        ).await?;
+
+        if result.matched_count == 0 {
+            return Err(TodoError::ListNotFound(list_name.to_string()));
+        }
+        if result.modified_count == 0 {
+            return Err(TodoError::ItemNotFound(format!("Item {} in list {}", item_number, list_name)));
+        }
+        Ok(())
+    }
+
+    pub async fn remove_item(&self, list_name: &str, item_number: usize) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        let result = collection.update_one(
+            doc! { "name": list_name },
+            doc! { "$unset": { format!("items.{}", item_number - 1): "" } },
+            None,
+        ).await?;
+
+        if result.matched_count == 0 {
+            return Err(TodoError::ListNotFound(list_name.to_string()));
+        }
+        if result.modified_count == 0 {
+            return Err(TodoError::ItemNotFound(format!("Item {} in list {}", item_number, list_name)));
+        }
+
+        collection.update_one(
+            doc! { "name": list_name },
+            doc! { "$pull": { "items": null } },
+            None,
+        ).await?;
+        Ok(())
+    }
+
+    pub async fn remove_list(&self, list_name: &str) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        let result = collection.delete_one(doc! { "name": list_name }, None).await?;
+        if result.deleted_count == 0 {
+            return Err(TodoError::ListNotFound(list_name.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn remove_all_lists(&self) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        collection.delete_many(doc! {}, None).await?;
+        Ok(())
+    }
 
 }
+
+
