@@ -182,10 +182,8 @@ async fn test_push_and_pull_changes() -> TodoResult<()> {
     let db1 = Database::new().await?;
     let db2 = Database::new().await?;
 
-    // Clear any existing data
     db1.remove_all_lists().await?;
 
-    // Create unique test data
     db1.add_item("Keir", Item { description: "Finish quantum algorithm".to_string(), completed: false }).await?;
     db1.add_item("Maverick", Item { description: "Test hypersonic jet".to_string(), completed: true }).await?;
     db1.add_item("Cyborg", Item { description: "Upgrade neural interface".to_string(), completed: false }).await?;
@@ -193,7 +191,6 @@ async fn test_push_and_pull_changes() -> TodoResult<()> {
     db1.push_changes().await?;
     db2.pull_changes().await?;
 
-    // Verify pulled changes
     let lists = db2.get_lists().await?;
     assert_eq!(lists.len(), 3, "Should have 3 lists after pull");
 
@@ -202,7 +199,6 @@ async fn test_push_and_pull_changes() -> TodoResult<()> {
     assert_eq!(keir_list.items[0].description, "Finish quantum algorithm");
     assert_eq!(keir_list.items[0].completed, false);
 
-    // Modify data in db2
     db2.update_item_status("Keir", 1, true).await?;
     db2.remove_item("Cyborg", 1).await?;
     db2.add_item("AI", Item { description: "Develop sentient AI".to_string(), completed: false }).await?;
@@ -210,7 +206,6 @@ async fn test_push_and_pull_changes() -> TodoResult<()> {
     db2.push_changes().await?;
     db1.pull_changes().await?;
 
-    // Verify updated data in db1
     let updated_lists = db1.get_lists().await?;
     assert_eq!(updated_lists.len(), 4, "Should have 4 lists after updates");
 
@@ -225,7 +220,6 @@ async fn test_push_and_pull_changes() -> TodoResult<()> {
     assert_eq!(ai_list.items.len(), 1, "AI list should have 1 item");
     assert_eq!(ai_list.items[0].description, "Develop sentient AI");
 
-    // Clean up
     db1.remove_all_lists().await?;
 
     Ok(())
