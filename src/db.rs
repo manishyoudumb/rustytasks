@@ -1,4 +1,3 @@
-use anyhow::Ok;
 use futures::TryStreamExt;
 use mongodb::bson;
 use mongodb::{Client, Database as MongoDatabase, bson::doc, options::ClientOptions};
@@ -58,5 +57,17 @@ impl Database {
     }
 
 
+    async fn update_list(&self, list: &List) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        collection.replace_one(doc! { "name": &list.name }, list, None).await?;
+        Ok(())
+    }
 
+    async fn create_list(&self, list: List) -> TodoResult<()> {
+        let collection = self.db.collection::<List>("lists");
+        collection.insert_one(list, None).await?;
+        Ok(())
+    }
+
+    
 }
