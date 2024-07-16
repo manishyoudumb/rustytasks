@@ -123,3 +123,73 @@ async fn remove_task(
     }
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use crate::cli::{Cli, Command};
+    use clap::Parser;
+
+    #[test]
+    fn test_show_command() {
+        let cli = Cli::parse_from(&["todo", "show", "--all"]);
+        assert!(matches!(cli.command, Command::Show { all: true, completed: false, incomplete: false, list_name: None }));
+
+        let cli = Cli::parse_from(&["todo", "show", "--completed", "my_list"]);
+        assert!(matches!(cli.command, Command::Show { all: false, completed: true, incomplete: false, list_name: Some(name) } if name == "my_list"));
+    }
+
+    #[test]
+    fn test_add_command() {
+        let cli = Cli::parse_from(&["todo", "add", "my_list", "New task"]);
+        assert!(matches!(cli.command, Command::Add { list_name, item } if list_name == "my_list" && item == "New task"));
+    }
+
+    #[test]
+    fn test_complete_command() {
+        let cli = Cli::parse_from(&["todo", "complete", "my_list", "1"]);
+        assert!(matches!(cli.command, Command::Complete { list_name, item_number } if list_name == "my_list" && item_number == 1));
+    }
+
+    #[test]
+    fn test_incomplete_command() {
+        let cli = Cli::parse_from(&["todo", "incomplete", "my_list", "2"]);
+        assert!(matches!(cli.command, Command::Incomplete { list_name, item_number } if list_name == "my_list" && item_number == 2));
+    }
+
+    #[test]
+    fn test_remove_command() {
+        let cli = Cli::parse_from(&["todo", "remove", "my_list", "3"]);
+        assert!(matches!(cli.command, Command::Remove { list_name: Some(name), item_number: Some(num) } if name == "my_list" && num == 3));
+
+        let cli = Cli::parse_from(&["todo", "remove", "my_list"]);
+        assert!(matches!(cli.command, Command::Remove { list_name: Some(name), item_number: None } if name == "my_list"));
+
+        let cli = Cli::parse_from(&["todo", "remove"]);
+        assert!(matches!(cli.command, Command::Remove { list_name: None, item_number: None }));
+    }
+
+    #[test]
+    fn test_login_command() {
+        let cli = Cli::parse_from(&["todo", "login"]);
+        assert!(matches!(cli.command, Command::Login));
+    }
+
+    #[test]
+    fn test_logout_command() {
+        let cli = Cli::parse_from(&["todo", "logout"]);
+        assert!(matches!(cli.command, Command::Logout));
+    }
+
+    #[test]
+    fn test_push_command() {
+        let cli = Cli::parse_from(&["todo", "push"]);
+        assert!(matches!(cli.command, Command::Push));
+    }
+
+    #[test]
+    fn test_pull_command() {
+        let cli = Cli::parse_from(&["todo", "pull"]);
+        assert!(matches!(cli.command, Command::Pull));
+    }
+}
