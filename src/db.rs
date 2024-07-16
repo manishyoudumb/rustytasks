@@ -1,5 +1,6 @@
 use futures::TryStreamExt;
 use mongodb::bson;
+use mongodb::options::ResolverConfig;
 use mongodb::{Client, Database as MongoDatabase, bson::doc, options::ClientOptions};
 use crate::models::{List, Item};
 use crate::error::{TodoError, TodoResult};
@@ -56,8 +57,7 @@ impl Database {
         Ok(())
     }
 
-
-    async fn update_list(&self, list: &List) -> TodoResult<()> {
+ async fn update_list(&self, list: &List) -> TodoResult<()> {
         let collection = self.db.collection::<List>("lists");
         collection.replace_one(doc! { "name": &list.name }, list, None).await?;
         Ok(())
@@ -71,9 +71,10 @@ impl Database {
 
     pub async fn new() -> TodoResult<Self> {
         let uri = std::env::var("MONGODB_URI").map_err(|_| TodoError::InvalidInput("MONGODB_URI must be set".to_string()))?;
-        let mut client_options = ClientOptions::parse(uri).await?;
-        client_options.app_name = Some("Todo App".to_string());
-        let client = Client::with_options(client_options)?;
+        let mut options = ClientOptions::parse_with_resolver_config(&uri, ResolverConfig::cloudflare()).await?;
+        
+        options.app_name = Some("Todo App".to_string());
+        let client = Client::with_options(options)?;
         let db = client.database("todo_app");
         Ok(Self { db })
     }
