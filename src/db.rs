@@ -69,5 +69,26 @@ impl Database {
         Ok(())
     }
 
+    pub async fn new() -> TodoResult<Self> {
+        let uri = std::env::var("MONGODB_URI").map_err(|_| TodoError::InvalidInput("MONGODB_URI must be set".to_string()))?;
+        let mut client_options = ClientOptions::parse(uri).await?;
+        client_options.app_name = Some("Todo App".to_string());
+        let client = Client::with_options(client_options)?;
+        let db = client.database("todo_app");
+        Ok(Self { db })
+    }
+
+    pub async fn get_lists(&self) -> TodoResult<Vec<List>> {
+        let collection = self.db.collection::<List>("lists");
+        let mut cursor = collection.find(None, None).await?;
+        let mut lists = Vec::new();
+        while let Some(list) = cursor.try_next().await? {
+            lists.push(list);
+        }
+        Ok(lists)
+    }
+
+
     
+
 }
