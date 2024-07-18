@@ -1,17 +1,20 @@
 mod cli;
-mod auth;
+mod commands;
+mod db;
 mod models;
 mod error;
-mod db;
-mod commands;
+mod auth;
+mod sync;
 
 use clap::Parser;
+use cli::Cli;
+use commands::execute_command;
 use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    let cli = cli::Cli::parse();
-    commands::execute_command(cli.command).await?;
+    let cli = Cli::parse();
+    execute_command(cli.command).await?;
     Ok(())
 }

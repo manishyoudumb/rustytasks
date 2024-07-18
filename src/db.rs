@@ -1,228 +1,222 @@
-use futures::TryStreamExt;
-use mongodb::bson;
-use mongodb::options::ResolverConfig;
-use mongodb::{Client, Database as MongoDatabase, bson::doc, options::ClientOptions};
+use std::sync::Arc;
+use mongodb::options::{ClientOptions, ResolverConfig};
+use tokio::sync::Mutex;
+use serde_json;
+use mongodb::{Client, Database as MongoDatabase};
 use crate::models::{List, Item};
 use crate::error::{TodoError, TodoResult};
+use std::time::SystemTime;
 
 
 pub struct Database {
-    db: MongoDatabase,
+    local_db: Arc<Mutex<serde_json::Value>>,
+    pub remote_db: MongoDatabase,
+    dirty: Arc<Mutex<bool>>,
+    #[allow(dead_code)]
+    last_modified: Arc<Mutex<SystemTime>>,
 }
 
 impl Database {
-    
-    pub async fn push_changes(&self) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        let local_lists = self.get_lists().await?;
-        
-        for list in local_lists {
-            collection.replace_one(
-                doc! { "name": &list.name },
-                &list,
-                mongodb::options::ReplaceOptions::builder().upsert(true).build(),
-            ).await?;
-        }
-        
-        Ok(())
 
-    }
-
-    pub async fn pull_changes(&self) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        let mut cursor = collection.find(None, None).await?;
-
-        while let Some(list) = cursor.try_next().await? {
-            let existing_list = self.get_list(&list.name).await;
-            match existing_list {
-                Ok(existing) => {
-                    if existing.name != list.name || existing.items.len() != list.items.len() {
-                        self.update_list(&list).await?;
-                    } else {
-                        for (existing_item, new_item) in existing.items.iter().zip(list.items.iter()) {
-                            if existing_item.description != new_item.description || existing_item.completed != new_item.completed {
-                                self.update_list(&list).await?;
-                                break;
-                            }
-                        }
-                    }
-                },
-                Err(TodoError::ListNotFound(_)) => {
-                    self.create_list(list).await?;
-                },
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok(())
-    }
-
- async fn update_list(&self, list: &List) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        collection.replace_one(doc! { "name": &list.name }, list, None).await?;
-        Ok(())
-    }
-
-    async fn create_list(&self, list: List) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        collection.insert_one(list, None).await?;
-        Ok(())
+    pub async fn create_list(&self, list_name: &str) -> TodoResult<()> {
+        let mut local_db = self.local_db.lock().await;
+        local_db[list_name] = serde_json::Value::Array(Vec::new());
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await
     }
 
     pub async fn new() -> TodoResult<Self> {
-        let uri = std::env::var("MONGODB_URI").map_err(|_| TodoError::InvalidInput("MONGODB_URI must be set".to_string()))?;
+        let uri = std::env::var("MONGODB_URI")
+            .map_err(|_| TodoError::ConfigError("MONGODB_URI must be set".to_string()))?;
+    
         let mut options = ClientOptions::parse_with_resolver_config(&uri, ResolverConfig::cloudflare()).await?;
-        
         options.app_name = Some("Todo App".to_string());
+    
         let client = Client::with_options(options)?;
-        let db = client.database("todo_app");
-        Ok(Self { db })
+        let remote_db = client.database("todo_app");
+    
+        let local_db = Self::load_local_db().await?;
+        let local_db = Arc::new(Mutex::new(local_db));
+    
+        let dirty = Arc::new(Mutex::new(false));
+        let last_modified = Arc::new(Mutex::new(SystemTime::now()));
+    
+        Ok(Self {
+            local_db,
+            remote_db,
+            dirty,
+            last_modified,
+        })
     }
 
+    async fn load_local_db() -> TodoResult<serde_json::Value> {
+        let data = tokio::fs::read_to_string("local_db.json").await.unwrap_or_else(|_| "{}".to_string());
+        Ok(serde_json::from_str(&data)?)
+    }
+
+    // async fn connect_remote_db() -> TodoResult<MongoDatabase> {
+    //     let uri = std::env::var("MONGODB_URI")
+    //         .map_err(|_| TodoError::ConfigError("MONGODB_URI not set".to_string()))?;
+    
+    //     let mut options = ClientOptions::parse_with_resolver_config(&uri, ResolverConfig::cloudflare()).await?;
+    //     options.app_name = Some("Todo App".to_string());
+    
+    //     let client = Client::with_options(options)?;
+    //     Ok(client.database("todo_app"))
+    // }
+    
+
+    pub async fn add_item(&self, list_name: &str, item: Item) -> TodoResult<()> {
+        let mut local_db = self.local_db.lock().await;
+        let list = local_db.get_mut(list_name)
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| TodoError::ListNotFound(list_name.to_string()))?;
+        list.push(serde_json::to_value(item)?);
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await?;
+        println!("Local database updated and marked as dirty.");
+        Ok(())
+    }
+
+    // pub async fn add_item(&self, list_name: &str, item: Item) -> TodoResult<()> {
+    //     let mut local_db = self.local_db.lock().await;
+    //     let list = local_db.get_mut(list_name)
+    //         .and_then(|v| v.as_array_mut())
+    //         .ok_or_else(|| TodoError::ListNotFound(list_name.to_string()))?;
+    //     list.push(serde_json::to_value(item)?);
+    //     *self.dirty.lock().await = true;
+    //     self.save_local_db(&local_db).await?;
+    //     Ok(())
+    // }
+
     pub async fn get_lists(&self) -> TodoResult<Vec<List>> {
-        let collection = self.db.collection::<List>("lists");
-        let mut cursor = collection.find(None, None).await?;
-        let mut lists = Vec::new();
-        while let Some(list) = cursor.try_next().await? {
-            lists.push(list);
-        }
+        let local_db = self.local_db.lock().await;
+        let lists: Vec<List> = local_db.as_object()
+            .ok_or_else(|| TodoError::DatabaseError("Invalid local database format".into()))?
+            .iter()
+            .map(|(name, items)| List {
+                name: name.clone(),
+                items: serde_json::from_value(items.clone()).unwrap_or_default(),
+            })
+            .collect();
         Ok(lists)
     }
 
     pub async fn get_list(&self, name: &str) -> TodoResult<List> {
-        let collection = self.db.collection::<List>("lists");
-        collection.find_one(doc! { "name": name }, None).await?
-            .ok_or_else(|| TodoError::ListNotFound(name.to_string()))
-    }
-
-    pub async fn add_item(&self, list_name: &str, item: Item) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        let result = collection.update_one(
-            doc! { "name": list_name },
-            doc! {
-                "$setOnInsert": { "name": list_name },
-                "$push": { "items": bson::to_document(&item).map_err(|err| TodoError::DatabaseError(err.into()))? }
-            },
-            mongodb::options::UpdateOptions::builder().upsert(true).build(),
-        ).await?;
-    
-        if result.matched_count == 0 && result.upserted_id.is_none() {
-            return Err(TodoError::ListNotFound(list_name.to_string()));
-        }
-        Ok(())
+        let local_db = self.local_db.lock().await;
+        let items = local_db.get(name)
+            .ok_or_else(|| TodoError::ListNotFound(name.to_string()))?;
+        Ok(List {
+            name: name.to_string(),
+            items: serde_json::from_value(items.clone())?,
+        })
     }
 
     pub async fn update_item_status(&self, list_name: &str, item_number: usize, completed: bool) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        let result = collection.update_one(
-            doc! { "name": list_name },
-            doc! { "$set": { format!("items.{}.completed", item_number - 1): completed } },
-            None,
-        ).await?;
+        let mut local_db = self.local_db.lock().await;
+        let list = local_db.get_mut(list_name)
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| TodoError::ListNotFound(list_name.to_string()))?;
 
-        if result.matched_count == 0 {
-            return Err(TodoError::ListNotFound(list_name.to_string()));
-        }
-        if result.modified_count == 0 {
+        if item_number == 0 || item_number > list.len() {
             return Err(TodoError::ItemNotFound(format!("Item {} in list {}", item_number, list_name)));
         }
+
+        let item = list.get_mut(item_number - 1)
+            .and_then(|v| v.as_object_mut())
+            .ok_or_else(|| TodoError::DatabaseError("Invalid local database format".into()))?;
+
+        item.insert("completed".to_string(), serde_json::Value::Bool(completed));
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await?;
         Ok(())
     }
 
     pub async fn remove_item(&self, list_name: &str, item_number: usize) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        let result = collection.update_one(
-            doc! { "name": list_name },
-            doc! { "$unset": { format!("items.{}", item_number - 1): "" } },
-            None,
-        ).await?;
+        let mut local_db = self.local_db.lock().await;
+        let list = local_db.get_mut(list_name)
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| TodoError::ListNotFound(list_name.to_string()))?;
 
-        if result.matched_count == 0 {
-            return Err(TodoError::ListNotFound(list_name.to_string()));
-        }
-        if result.modified_count == 0 {
+        if item_number == 0 || item_number > list.len() {
             return Err(TodoError::ItemNotFound(format!("Item {} in list {}", item_number, list_name)));
         }
 
-        collection.update_one(
-            doc! { "name": list_name },
-            doc! { "$pull": { "items": null } },
-            None,
-        ).await?;
+        list.remove(item_number - 1);
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await?;
         Ok(())
     }
 
     pub async fn remove_list(&self, list_name: &str) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        let result = collection.delete_one(doc! { "name": list_name }, None).await?;
-        if result.deleted_count == 0 {
+        let mut local_db = self.local_db.lock().await;
+        if local_db.as_object_mut().unwrap().remove(list_name).is_none() {
             return Err(TodoError::ListNotFound(list_name.to_string()));
         }
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await?;
         Ok(())
     }
 
     pub async fn remove_all_lists(&self) -> TodoResult<()> {
-        let collection = self.db.collection::<List>("lists");
-        collection.delete_many(doc! {}, None).await?;
+        let mut local_db = self.local_db.lock().await;
+        *local_db = serde_json::Value::Object(serde_json::Map::new());
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await?;
         Ok(())
     }
 
+
+
+    #[allow(dead_code)]
+    pub async fn is_dirty(&self) -> bool {
+        *self.dirty.lock().await
+    }
+
+    pub async fn set_dirty(&self, value: bool) {
+        *self.dirty.lock().await = value;
+    }
+
+    pub async fn update_local_db(&self, new_db: serde_json::Value) -> TodoResult<()> {
+        let mut local_db = self.local_db.lock().await;
+        *local_db = new_db;
+        self.save_local_db(&local_db).await
+    }
+
+    async fn save_local_db(&self, local_db: &serde_json::Value) -> TodoResult<()> {
+        let data = serde_json::to_string_pretty(&local_db)?;
+        tokio::fs::write("local_db.json", data).await?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub async fn update_local_db_new(&self, new_db: serde_json::Value) -> TodoResult<()> {
+        let mut local_db = self.local_db.lock().await;
+        *local_db = new_db;
+        *self.dirty.lock().await = true;
+        self.save_local_db(&local_db).await
+    }
+    
+    pub async fn get_local_db(&self) -> TodoResult<serde_json::Value> {
+        let local_db = self.local_db.lock().await;
+        Ok(local_db.clone())
+    }
+    #[allow(dead_code)]
+    async fn save_local_db_new(&self, local_db: &serde_json::Value) -> TodoResult<()> {
+        let data = serde_json::to_string_pretty(&local_db)?;
+        tokio::fs::write("local_db.json", data).await?;
+        Ok(())
+    }
+    #[allow(dead_code)]
+    async fn check_file_modified(&self) -> bool {
+        let metadata = tokio::fs::metadata("local_db.json").await.ok();
+        let file_modified = metadata.and_then(|m| m.modified().ok());
+        let last_modified = *self.last_modified.lock().await;
+        file_modified.map_or(false, |m| m > last_modified)
+    }
+
+    pub async fn update_last_modified(&self) {
+        *self.last_modified.lock().await = SystemTime::now();
+    }
+
 }
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio;
-    use dotenv::from_filename;
-
-    #[tokio::test]
-async fn test_push_and_pull_changes() -> TodoResult<()> {
-    from_filename(".env").ok();
-    let db1 = Database::new().await?;
-    let db2 = Database::new().await?;
-
-    db1.remove_all_lists().await?;
-
-    db1.add_item("Keir", Item { description: "Finish quantum algorithm".to_string(), completed: false }).await?;
-    db1.add_item("Maverick", Item { description: "Test hypersonic jet".to_string(), completed: true }).await?;
-    db1.add_item("Cyborg", Item { description: "Upgrade neural interface".to_string(), completed: false }).await?;
-
-    db1.push_changes().await?;
-    db2.pull_changes().await?;
-
-    let lists = db2.get_lists().await?;
-    assert_eq!(lists.len(), 3, "Should have 3 lists after pull");
-
-    let keir_list = db2.get_list("Keir").await?;
-    assert_eq!(keir_list.items.len(), 1, "Keir's list should have 1 item");
-    assert_eq!(keir_list.items[0].description, "Finish quantum algorithm");
-    assert_eq!(keir_list.items[0].completed, false);
-
-    db2.update_item_status("Keir", 1, true).await?;
-    db2.remove_item("Cyborg", 1).await?;
-    db2.add_item("AI", Item { description: "Develop sentient AI".to_string(), completed: false }).await?;
-
-    db2.push_changes().await?;
-    db1.pull_changes().await?;
-
-    let updated_lists = db1.get_lists().await?;
-    assert_eq!(updated_lists.len(), 4, "Should have 4 lists after updates");
-
-    let updated_keir_list = db1.get_list("Keir").await?;
-    assert_eq!(updated_keir_list.items.len(), 1, "Updated Keir's list should have 1 item");
-    assert_eq!(updated_keir_list.items[0].completed, true);
-
-    let cyborg_list = db1.get_list("Cyborg").await?;
-    assert_eq!(cyborg_list.items.len(), 0, "Cyborg's list should be empty");
-
-    let ai_list = db1.get_list("AI").await?;
-    assert_eq!(ai_list.items.len(), 1, "AI list should have 1 item");
-    assert_eq!(ai_list.items[0].description, "Develop sentient AI");
-
-    db1.remove_all_lists().await?;
-
-    Ok(())
-}
-
-}    
