@@ -4,7 +4,7 @@
 ![Rust Version](https://img.shields.io/badge/rust-1.55%2B-orange.svg)
 ![MongoDB](https://img.shields.io/badge/MongoDB-4.4%2B-green.svg)
 
-A command-line interface (CLI) application for managing todo lists with MongoDB backend and Google OAuth authentication.
+A command-line interface (CLI) application for managing todo lists with MongoDB database and Google OAuth authentication.
 
 ## Overview
 
