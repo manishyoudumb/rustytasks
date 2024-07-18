@@ -53,17 +53,6 @@ impl Database {
         let data = tokio::fs::read_to_string("local_db.json").await.unwrap_or_else(|_| "{}".to_string());
         Ok(serde_json::from_str(&data)?)
     }
-
-    // async fn connect_remote_db() -> TodoResult<MongoDatabase> {
-    //     let uri = std::env::var("MONGODB_URI")
-    //         .map_err(|_| TodoError::ConfigError("MONGODB_URI not set".to_string()))?;
-    
-    //     let mut options = ClientOptions::parse_with_resolver_config(&uri, ResolverConfig::cloudflare()).await?;
-    //     options.app_name = Some("Todo App".to_string());
-    
-    //     let client = Client::with_options(options)?;
-    //     Ok(client.database("todo_app"))
-    // }
     
 
     pub async fn add_item(&self, list_name: &str, item: Item) -> TodoResult<()> {
@@ -77,17 +66,6 @@ impl Database {
         println!("Local database updated and marked as dirty.");
         Ok(())
     }
-
-    // pub async fn add_item(&self, list_name: &str, item: Item) -> TodoResult<()> {
-    //     let mut local_db = self.local_db.lock().await;
-    //     let list = local_db.get_mut(list_name)
-    //         .and_then(|v| v.as_array_mut())
-    //         .ok_or_else(|| TodoError::ListNotFound(list_name.to_string()))?;
-    //     list.push(serde_json::to_value(item)?);
-    //     *self.dirty.lock().await = true;
-    //     self.save_local_db(&local_db).await?;
-    //     Ok(())
-    // }
 
     pub async fn get_lists(&self) -> TodoResult<Vec<List>> {
         let local_db = self.local_db.lock().await;
@@ -166,13 +144,6 @@ impl Database {
         Ok(())
     }
 
-
-
-    #[allow(dead_code)]
-    pub async fn is_dirty(&self) -> bool {
-        *self.dirty.lock().await
-    }
-
     pub async fn set_dirty(&self, value: bool) {
         *self.dirty.lock().await = value;
     }
@@ -189,34 +160,36 @@ impl Database {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub async fn update_local_db_new(&self, new_db: serde_json::Value) -> TodoResult<()> {
-        let mut local_db = self.local_db.lock().await;
-        *local_db = new_db;
-        *self.dirty.lock().await = true;
-        self.save_local_db(&local_db).await
-    }
+    
     
     pub async fn get_local_db(&self) -> TodoResult<serde_json::Value> {
         let local_db = self.local_db.lock().await;
         Ok(local_db.clone())
     }
-    #[allow(dead_code)]
-    async fn save_local_db_new(&self, local_db: &serde_json::Value) -> TodoResult<()> {
-        let data = serde_json::to_string_pretty(&local_db)?;
-        tokio::fs::write("local_db.json", data).await?;
-        Ok(())
-    }
-    #[allow(dead_code)]
-    async fn check_file_modified(&self) -> bool {
-        let metadata = tokio::fs::metadata("local_db.json").await.ok();
-        let file_modified = metadata.and_then(|m| m.modified().ok());
-        let last_modified = *self.last_modified.lock().await;
-        file_modified.map_or(false, |m| m > last_modified)
-    }
+    
+    
 
     pub async fn update_last_modified(&self) {
         *self.last_modified.lock().await = SystemTime::now();
     }
 
 }
+
+
+// #[tokio::test]
+// async fn test_get_local_db() {
+//     let db = Database::new().await.unwrap();
+//     let result = db.get_local_db().await;
+//     assert!(result.is_ok());
+//     // Wow, it actually returned something. What a miracle!
+// }
+
+// #[tokio::test]
+// async fn test_update_last_modified() {
+//     let db = Database::new().await.unwrap();
+//     let before = *db.last_modified.lock().await;
+//     db.update_last_modified().await;
+//     let after = *db.last_modified.lock().await;
+//     assert!(after > before);
+//     // Time moves forward. Who would've thought?
+// }
