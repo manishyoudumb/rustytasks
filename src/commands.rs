@@ -64,6 +64,7 @@ async fn show_tasks(db: &Database, all: bool, completed: bool, incomplete: bool,
 }
 
 async fn add_task(db: &Database, list_name: &str, item_description: &str) -> TodoResult<()> {
+    // Check if the list exists, if not, create it
     if db.get_list(list_name).await.is_err() {
         db.create_list(list_name).await?;
         println!("Created new list '{}'", list_name);
@@ -108,3 +109,26 @@ async fn remove_task(db: &Database, list_name: Option<String>, item_number: Opti
     }
     Ok(())
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::db::Database;
+    
+
+//     #[tokio::test]
+//     async fn test_add_task() {
+//         let db = Database::new().await.unwrap();
+//         let list_name = "Test List";
+//         let item_description = "Buy milk";
+
+//         let result = add_task(&db, list_name, item_description).await;
+
+//         assert!(result.is_ok());
+
+//         let list = db.get_list(list_name).await.unwrap();
+//         assert_eq!(list.items.len(), 1);
+//         assert_eq!(list.items[0].description, item_description);
+//         assert_eq!(list.items[0].completed, false);
+//     }
+// }
