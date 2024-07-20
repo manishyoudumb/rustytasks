@@ -110,25 +110,25 @@ async fn remove_task(db: &Database, list_name: Option<String>, item_number: Opti
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::db::Database;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
     
 
-//     #[tokio::test]
-//     async fn test_add_task() {
-//         let db = Database::new().await.unwrap();
-//         let list_name = "Test List";
-//         let item_description = "Buy milk";
+    #[tokio::test]
+    async fn test_add_task() {
+        let db = Database::new().await.unwrap();
+        let list_name = "Test List";
+        let item_description = "Buy milk";
 
-//         let result = add_task(&db, list_name, item_description).await;
+        let result = add_task(&db, list_name, item_description).await;
 
-//         assert!(result.is_ok());
+        assert!(result.is_ok());
 
-//         let list = db.get_list(list_name).await.unwrap();
-//         assert_eq!(list.items.len(), 1);
-//         assert_eq!(list.items[0].description, item_description);
-//         assert_eq!(list.items[0].completed, false);
-//     }
-// }
+        let list = db.get_list(list_name).await.unwrap();
+        assert_eq!(list.items.len(), 1);
+        assert_eq!(list.items[0].description, item_description);
+        assert_eq!(list.items[0].completed, false);
+    }
+}

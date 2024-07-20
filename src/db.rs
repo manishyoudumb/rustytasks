@@ -173,23 +173,54 @@ impl Database {
         *self.last_modified.lock().await = SystemTime::now();
     }
 
+    #[allow(dead_code)]
+    pub async fn new_local_only() -> TodoResult<Self> {
+        let local_db = Self::load_local_db().await?;
+        let local_db = Arc::new(Mutex::new(local_db));
+        let dirty = Arc::new(Mutex::new(false));
+        let last_modified = Arc::new(Mutex::new(SystemTime::now()));
+
+        let client = mongodb::Client::with_uri_str("mongodb://localhost:27017").await?;
+        let remote_db = client.database("dummy_db");
+
+        Ok(Self {
+            local_db,
+            remote_db,
+            dirty,
+            last_modified,
+        })
+    }
+
 }
 
 
-// #[tokio::test]
-// async fn test_get_local_db() {
-//     let db = Database::new().await.unwrap();
-//     let result = db.get_local_db().await;
-//     assert!(result.is_ok());
-//     // Wow, it actually returned something. What a miracle!
-// }
+#[tokio::test]
+async fn test_basic_local_operations() {
+    let db = Database::new().await.expect("Failed to create database");
 
-// #[tokio::test]
-// async fn test_update_last_modified() {
-//     let db = Database::new().await.unwrap();
-//     let before = *db.last_modified.lock().await;
-//     db.update_last_modified().await;
-//     let after = *db.last_modified.lock().await;
-//     assert!(after > before);
-//     // Time moves forward. Who would've thought?
-// }
+    // Test creating a list
+    db.create_list("Test List").await.expect("Failed to create list");
+
+    // Test adding an item
+    let item = Item {
+        description: "Test Item".to_string(),
+        completed: false,
+    };
+    db.add_item("Test List", item).await.expect("Failed to add item");
+
+    // Test getting the list
+    let list = db.get_list("Test List").await.expect("Failed to get list");
+    assert_eq!(list.name, "Test List");
+    assert_eq!(list.items.len(), 1);
+    assert_eq!(list.items[0].description, "Test Item");
+
+    // Test updating item status
+    db.update_item_status("Test List", 1, true).await.expect("Failed to update item status");
+    let updated_list = db.get_list("Test List").await.expect("Failed to get updated list");
+    assert!(updated_list.items[0].completed);
+
+    // Test removing the list
+    db.remove_list("Test List").await.expect("Failed to remove list");
+    let lists = db.get_lists().await.expect("Failed to get lists");
+    assert_eq!(lists.len(), 0);
+}

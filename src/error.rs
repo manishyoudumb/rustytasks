@@ -30,9 +30,9 @@ pub enum TodoError {
 pub type TodoResult<T> = Result<T, TodoError>;
 
 
-// #[test]
-// fn test_todo_error_messages() {
-//     let config_error = TodoError::ConfigError("Oops".to_string());
-//     assert_eq!(format!("{}", config_error), "Configuration error: Oops");
-//     // Because who doesn't love a good config error, am I right?
-// }
+#[test]
+fn test_todo_error_messages() {
+    let config_error = TodoError::ConfigError("Oops".to_string());
+    assert_eq!(format!("{}", config_error), "Configuration error: Oops");
+    // Because who doesn't love a good config error, am I right?
+}
