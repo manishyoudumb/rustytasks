@@ -71,7 +71,7 @@ GOOGLE_CLIENT_SECRET=YOUR_SECRET_KEY
 ```
 admin@keir> cargo test
 ```
-![Result](https://github.com/user-attachments/assets/924b1a1d-d279-4435-9319-81a43798664c)
+![Result](1.png)
 
 5. Build the Project :
 ```
